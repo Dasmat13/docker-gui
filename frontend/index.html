@@ -1,12 +1,894 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-    <title>docker-gui — Dashboard</title>
-  </head>
-  <body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<html lang="en" class="h-full" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Docker Manager — Dashboard</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Glass background for side stats */
+    .glass {
+      background: rgba(8, 18, 38, 0.6);
+      backdrop-filter: blur(6px);
+    }
+    /* Animations */
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 6px 1px rgba(56, 189, 248, 0.8); }
+      50% { box-shadow: 0 0 10px 2px rgba(56, 189, 248, 0.4); }
+    }
+    /* Container card hover */
+    .container-card:hover {
+      transform: scale(1.02);
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.6);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+      z-index: 5;
+    }
+    /* Buttons hover/focus */
+    button:hover, button:focus {
+      transform: scale(1.05);
+      transition: transform 0.2s ease;
+      outline: none;
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+    }
+    button:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 2px;
+    }
+
+    /* Status badges animations */
+    .status-running {
+      animation: pulse-glow 2.5s infinite;
+      border-color: #38bdf8 !important;
+      color: #38bdf8 !important;
+    }
+    .status-paused {
+      animation: pulse-glow 3s infinite alternate;
+      border-color: #f59e0b !important;
+      color: #f59e0b !important;
+    }
+    .status-exited {
+      opacity: 0.7;
+      border-color: #94a3b8 !important;
+      color: #94a3b8 !important;
+    }
+
+    /* Fade in animation for container cards */
+    .fade-in {
+      animation: fadeIn 0.5s ease forwards;
+      opacity: 0;
+    }
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+
+    /* Smooth transitions for view mode */
+    #containerGrid {
+      transition: all 0.3s ease;
+    }
+
+    /* Clear button inside search */
+    .search-clear {
+      position: absolute;
+      right: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #94a3b8;
+      font-weight: bold;
+      font-size: 1.2rem;
+      user-select: none;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+    .search-clear:hover {
+      opacity: 1;
+    }
+
+    /* Navigation icons & hover */
+    nav a svg {
+      width: 1rem;
+      height: 1rem;
+      margin-right: 0.4rem;
+      vertical-align: middle;
+      fill: currentColor;
+      transition: fill 0.2s ease;
+    }
+    nav a:hover svg {
+      fill: #60a5fa;
+    }
+    nav a.active {
+      background-color: #1e40af;
+      font-weight: 600;
+      border-radius: 0.375rem;
+      box-shadow: inset 3px 0 0 #3b82f6;
+    }
+
+    /* Dark mode fade */
+    body[data-theme='dark'] {
+      transition: background-color 0.5s ease, color 0.5s ease;
+    }
+    body[data-theme='light'] {
+      transition: background-color 0.5s ease, color 0.5s ease;
+    }
+
+    /* Settings cards */
+    .settings-card {
+      background-color: #1e293b; /* slate-800 */
+      border-radius: 0.5rem;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 0 10px rgb(30 41 59 / 0.6);
+    }
+
+    /* Toast notifications */
+    #toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background-color: #2563eb;
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.375rem;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.6);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(30px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      font-weight: 600;
+      z-index: 9999;
+    }
+    #toast.show {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    /* Logs overlay & slide panel */
+    #logsOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 1000;
+    }
+    #logsOverlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    #logsPanel {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -60%);
+      background-color: #0f172a; /* slate-900 */
+      border-radius: 0.5rem;
+      width: 90vw;
+      max-width: 900px;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.7);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      z-index: 1001;
+    }
+    #logsPanel.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, -50%);
+    }
+    #logsHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid #334155;
+      color: #f1f5f9;
+      font-weight: 700;
+      font-size: 1.125rem;
+    }
+    #logsContent {
+      background-color: #1e293b;
+      color: #e2e8f0;
+      padding: 1rem;
+      font-family: monospace;
+      font-size: 0.875rem;
+      overflow-y: auto;
+      flex-grow: 1;
+      white-space: pre-wrap;
+      user-select: text;
+      border-radius: 0 0 0.5rem 0.5rem;
+    }
+    #logsCloseBtn, #logsCopyBtn {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+      cursor: pointer;
+      font-size: 1.25rem;
+      padding: 0.25rem 0.5rem;
+      transition: color 0.2s ease;
+    }
+    #logsCloseBtn:hover, #logsCopyBtn:hover {
+      color: #3b82f6;
+    }
+
+    /* Sort dropdown icons */
+    .sort-icon {
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 0.25rem;
+      fill: currentColor;
+      width: 1rem;
+      height: 1rem;
+    }
+
+    /* View mode buttons */
+    .view-mode-btn {
+      padding: 0.375rem 0.75rem;
+      border-radius: 0.375rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 2px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      user-select: none;
+      transition: all 0.3s ease;
+      color: #94a3b8;
+      background: transparent;
+    }
+    .view-mode-btn.active {
+      background-color: #2563eb;
+      color: white;
+      border-color: #2563eb;
+      box-shadow: 0 0 10px #2563eb;
+    }
+    .view-mode-btn:hover:not(.active), .view-mode-btn:focus:not(.active) {
+      color: #3b82f6;
+      border-color: #3b82f6;
+      box-shadow: 0 0 5px #3b82f6;
+      outline: none;
+    }
+    .view-mode-btn svg {
+      width: 1.2rem;
+      height: 1.2rem;
+      fill: currentColor;
+    }
+
+    /* Responsive tweaks */
+    @media (max-width: 1024px) {
+      #containerGrid {
+        grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+      }
+    }
+    @media (max-width: 640px) {
+      #sidebar {
+        display: none;
+      }
+      main {
+        padding: 1rem !important;
+      }
+    }
+  </style>
+</head>
+<body class="h-full bg-slate-900 text-slate-100 font-sans" data-theme="dark">
+  <div id="app" class="h-full flex">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="w-72 bg-slate-800/70 border-r border-slate-700 p-6 flex flex-col gap-6" role="navigation" aria-label="Main navigation">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white font-bold select-none">DG</div>
+        <div class="user-info">
+          <div id="userName" class="text-blue-400 font-semibold"><strong>Dasmat Hansda</strong></div>
+          <div class="text-xs text-slate-400" aria-label="User role">Administrator</div>
+        </div>
+      </div>
+
+      <div class="relative">
+        <input id="searchInput" aria-label="Search containers" placeholder="Search containers..." class="w-full px-3 py-2 rounded bg-slate-700 text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8" />
+        <span id="clearSearch" class="search-clear" role="button" aria-label="Clear search" tabindex="0" style="display:none;">×</span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <label for="sortSelect" class="sr-only">Sort containers</label>
+        <select id="sortSelect" aria-label="Sort containers" class="flex-grow rounded bg-slate-700 text-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+          <option value="name">⬆️ Sort by Name (A→Z)</option>
+          <option value="status">⚙️ Sort by Status (Running, Paused, Exited)</option>
+          <option value="created">📅 Sort by Creation Time (Newest first)</option>
+        </select>
+      </div>
+
+      <nav class="flex flex-col gap-2 mt-4" role="list">
+        <a href="#dashboard" id="linkDashboard" class="active flex items-center px-3 py-2 text-slate-100 font-semibold rounded-md" aria-selected="true" role="listitem" tabindex="0">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M13 5v6h6"/></svg>
+          Overview
+        </a>
+        <a href="#containers" id="linkContainers" class="flex items-center px-3 py-2 text-slate-300 rounded-md hover:bg-slate-700/30 hover:text-slate-100" aria-selected="false" role="listitem" tabindex="0">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v2a2 2 0 002 2h2a2 2 0 002-2v-2m4-4h.01M6 21h.01M6 3h.01M3 7h.01M17 7h.01"/></svg>
+          Containers
+        </a>
+        <a href="#settings" id="linkSettings" class="flex items-center px-3 py-2 text-slate-300 rounded-md hover:bg-slate-700/30 hover:text-slate-100" aria-selected="false" role="listitem" tabindex="0">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/></svg>
+          Settings
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 p-6 overflow-auto" role="main">
+      <!-- Header -->
+      <header class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">
+          <h1 class="text-2xl font-extrabold text-slate-100 select-none">Docker Manager</h1>
+          <div class="text-sm text-slate-400 select-none">Visual container manager</div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button id="refreshBtn" class="px-4 py-2 rounded-md border border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white transition-transform transform focus:outline-none focus:ring-2 focus:ring-blue-400" aria-label="Refresh container list">
+            Refresh
+          </button>
+          <div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm text-slate-200 select-none" aria-label="User initials">DG</div>
+        </div>
+      </header>
+
+      <!-- Error message -->
+      <div id="errorBox" class="hidden mb-4 px-4 py-2 rounded text-white bg-red-600 flex items-center gap-2" role="alert" aria-live="assertive">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+        <span id="errorText"></span>
+      </div>
+
+      <!-- Summary cards -->
+      <section id="summaryCards" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6" aria-label="Container summary stats"></section>
+
+      <!-- View mode & sorting controls -->
+      <div class="flex flex-wrap items-center gap-4 mb-4">
+        <div role="group" aria-label="View mode toggle" class="flex gap-2">
+          <button id="viewListBtn" class="view-mode-btn active" aria-pressed="true" aria-label="List View" title="List View (compact)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <button id="viewDetailedBtn" class="view-mode-btn" aria-pressed="false" aria-label="Detailed List View" title="Detailed List View (expanded)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4" width="18" height="5" rx="2" ry="2"/><rect x="3" y="10" width="18" height="10" rx="2" ry="2"/></svg>
+          </button>
+          <button id="viewGridBtn" class="view-mode-btn" aria-pressed="false" aria-label="Grid View" title="Grid View (cards)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1" ry="1"/><rect x="14" y="3" width="7" height="7" rx="1" ry="1"/><rect x="14" y="14" width="7" height="7" rx="1" ry="1"/><rect x="3" y="14" width="7" height="7" rx="1" ry="1"/></svg>
+          </button>
+        </div>
+
+        <div>
+          <label for="sortSelectMain" class="sr-only">Sort containers</label>
+          <select id="sortSelectMain" aria-label="Sort containers" class="rounded bg-slate-700 text-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+            <option value="name">Sort by Name (A→Z)</option>
+            <option value="status">Sort by Status</option>
+            <option value="created">Sort by Creation Time (Newest first)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Main grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Container list (spans two columns on large screens) -->
+        <section id="containerArea" class="lg:col-span-2" aria-label="Containers list">
+          <div id="loadingRow" class="text-center text-slate-400 py-6 hidden" aria-live="polite">Loading containers...</div>
+          <div id="noContainersRow" class="text-center text-slate-400 py-6 hidden" aria-live="polite">No containers found.</div>
+
+          <div id="containerGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4" tabindex="0" aria-live="polite" aria-relevant="additions removals"></div>
+        </section>
+
+        <!-- Quick stats / logs -->
+        <aside aria-label="Quick statistics and logs">
+          <div class="glass rounded-lg p-4 mb-4 border border-slate-700" role="region" aria-labelledby="quickStatsLabel">
+            <div id="quickStatsLabel" class="text-slate-300 font-semibold mb-2 select-none">Quick Stats</div>
+            <div class="space-y-2 text-slate-100">
+              <div class="flex justify-between" aria-live="polite"><div>Running</div><div id="statRunning">0</div></div>
+              <div class="flex justify-between" aria-live="polite"><div>Exited</div><div id="statExited">0</div></div>
+              <div class="flex justify-between" aria-live="polite"><div>Total</div><div id="statTotal">0</div></div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- Logs Overlay -->
+  <div id="logsOverlay" role="dialog" aria-modal="true" aria-labelledby="logsTitle" tabindex="-1"></div>
+  <section id="logsPanel" aria-label="Container logs panel" tabindex="0" aria-live="polite" aria-atomic="true">
+    <header id="logsHeader" class="flex items-center justify-between">
+      <h2 id="logsTitle" class="text-slate-200 font-semibold">Logs</h2>
+      <div>
+        <button id="logsCopyBtn" aria-label="Copy logs to clipboard" title="Copy logs">📋</button>
+        <button id="logsCloseBtn" aria-label="Close logs panel" title="Close logs">✖</button>
+      </div>
+    </header>
+    <pre id="logsContent" class="text-sm text-slate-200 max-h-64 overflow-auto whitespace-pre-wrap font-mono bg-slate-900/40 p-4 rounded-b-lg"></pre>
+  </section>
+
+  <!-- Toast notifications -->
+  <div id="toast" role="alert" aria-live="assertive" aria-atomic="true"></div>
+
+  <script>
+    /* ========== Helper constants ========== */
+    const STATUS_COLORS = {
+      running: "#38bdf8", // Tailwind sky-400
+      exited: "#94a3b8",  // slate-400
+      paused: "#f59e0b",  // amber-500
+      default: "#64748b",
+    };
+
+    const STATUS_CLASSES = {
+      running: 'status-running',
+      exited: 'status-exited',
+      paused: 'status-paused',
+    };
+
+    /* ========== State ========== */
+    let containers = [];
+    let loading = false;
+    let selectedId = null;
+    let removingId = null;
+    let loadingLogsId = null;
+    let currentView = 'list'; // list, detailed, grid
+    let currentSort = 'name'; // name, status, created
+
+    /* ========== DOM refs ========== */
+    const refreshBtn = document.getElementById('refreshBtn');
+    const containerGrid = document.getElementById('containerGrid');
+    const loadingRow = document.getElementById('loadingRow');
+    const noContainersRow = document.getElementById('noContainersRow');
+    const errorBox = document.getElementById('errorBox');
+    const errorText = document.getElementById('errorText');
+    const summaryCards = document.getElementById('summaryCards');
+    const searchInput = document.getElementById('searchInput');
+    const clearSearch = document.getElementById('clearSearch');
+    const sortSelect = document.getElementById('sortSelectMain');
+    const viewListBtn = document.getElementById('viewListBtn');
+    const viewDetailedBtn = document.getElementById('viewDetailedBtn');
+    const viewGridBtn = document.getElementById('viewGridBtn');
+
+    const links = {
+      dashboard: document.getElementById('linkDashboard'),
+      containers: document.getElementById('linkContainers'),
+      settings: document.getElementById('linkSettings'),
+    };
+
+    const logsOverlay = document.getElementById('logsOverlay');
+    const logsPanel = document.getElementById('logsPanel');
+    const logsContent = document.getElementById('logsContent');
+    const logsTitle = document.getElementById('logsTitle');
+    const logsCloseBtn = document.getElementById('logsCloseBtn');
+    const logsCopyBtn = document.getElementById('logsCopyBtn');
+
+    const statRunning = document.getElementById('statRunning');
+    const statExited = document.getElementById('statExited');
+    const statTotal = document.getElementById('statTotal');
+
+    const API_BASE = (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '') + '/api';
+
+    /* ========== Utility functions ========== */
+    function getStatusColor(status){
+      if(!status) return STATUS_COLORS.default;
+      const s = String(status).toLowerCase();
+      if(s.includes("up")) return STATUS_COLORS.running;
+      if(s.includes("exited")) return STATUS_COLORS.exited;
+      if(s.includes("paused")) return STATUS_COLORS.paused;
+      return STATUS_COLORS.default;
+    }
+    function getStatusClass(state){
+      if(!state) return '';
+      const s = String(state).toLowerCase();
+      if(s === 'running') return STATUS_CLASSES.running;
+      if(s === 'exited') return STATUS_CLASSES.exited;
+      if(s === 'paused') return STATUS_CLASSES.paused;
+      return '';
+    }
+    function cleanName(name){
+      if(!name) return "";
+      return name.startsWith("/") ? name.slice(1) : name;
+    }
+    function escapeHtml(unsafe){
+      return String(unsafe)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#039;');
+    }
+    // Sort containers by currentSort
+    function sortContainers(list){
+      const copy = [...list];
+      switch(currentSort){
+        case 'name':
+          copy.sort((a,b) => {
+            const na = cleanName((a.Names && a.Names[0]) || '').toLowerCase();
+            const nb = cleanName((b.Names && b.Names[0]) || '').toLowerCase();
+            return na.localeCompare(nb);
+          });
+          break;
+        case 'status':
+          // Running > Paused > Exited > others
+          const rank = s => {
+            const st = (s || '').toLowerCase();
+            if(st === 'running') return 1;
+            if(st === 'paused') return 2;
+            if(st === 'exited') return 3;
+            return 4;
+          };
+          copy.sort((a,b) => rank(a.State) - rank(b.State));
+          break;
+        case 'created':
+          copy.sort((a,b) => b.Created - a.Created);
+          break;
+      }
+      return copy;
+    }
+
+    /* ========== UI Renders ========== */
+    function setError(msg){
+      if(!msg){
+        errorBox.classList.add('hidden');
+        errorText.textContent = '';
+        return;
+      }
+      errorText.textContent = msg;
+      errorBox.classList.remove('hidden');
+    }
+
+    function setLoading(v){
+      loading = v;
+      refreshBtn.disabled = v;
+      if(v && containers.length === 0){
+        loadingRow.classList.remove('hidden');
+      } else {
+        loadingRow.classList.add('hidden');
+      }
+    }
+
+    function renderSummary(){
+      const runningCount = containers.filter(c => c.State === 'running').length;
+      const exitedCount = containers.filter(c => c.State === 'exited').length;
+      const pausedCount = containers.filter(c => c.State === 'paused').length;
+      const total = containers.length;
+
+      statRunning.textContent = runningCount;
+      statExited.textContent = exitedCount;
+      statTotal.textContent = total;
+
+      const items = [
+        {title:'Running', value: runningCount, subtitle:'Active containers'},
+        {title:'Exited', value: exitedCount, subtitle:'Stopped containers'},
+        {title:'Paused', value: pausedCount, subtitle:'Paused'},
+        {title:'Total', value: total, subtitle:'All containers'}
+      ];
+
+      summaryCards.innerHTML = '';
+      items.forEach(it => {
+        const card = document.createElement('div');
+        card.className = 'bg-slate-800/60 border border-slate-700 rounded-lg p-4 select-none';
+        card.innerHTML = `
+          <div class="text-sm text-slate-400">${escapeHtml(it.title)}</div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <div class="text-2xl font-extrabold text-slate-100">${escapeHtml(String(it.value))}</div>
+            <div class="text-xs text-slate-300">${escapeHtml(it.subtitle || '')}</div>
+          </div>
+        `;
+        summaryCards.appendChild(card);
+      });
+    }
+
+    function createContainerCard(c){
+      const id = c.Id;
+      const name = cleanName((c.Names && c.Names[0]) || 'Unknown');
+      const statusColor = getStatusColor(c.Status);
+      const statusClass = getStatusClass(c.State);
+      const isRunning = (c.State === 'running');
+      const isPaused = (c.State === 'paused');
+
+      // Create outer card
+      const article = document.createElement('article');
+      article.className = `container-card bg-slate-800/60 border border-slate-700 rounded-lg p-4 flex flex-col gap-3 fade-in`;
+      article.setAttribute('role','listitem');
+      article.setAttribute('tabindex','0');
+      article.setAttribute('aria-label', `${name} container, status: ${c.Status}`);
+
+      // Header row
+      const header = document.createElement('div');
+      header.className = 'flex justify-between items-start gap-3';
+      header.innerHTML = `
+        <div class="min-w-0">
+          <div class="text-xs text-slate-400 select-none">${escapeHtml((c.Image || c.ImageName) || '')}</div>
+          <div class="text-lg font-bold text-slate-100 truncate">${escapeHtml(name)}</div>
+          <div class="mt-1">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusClass}" style="border:1px solid; color:inherit;">
+              ${escapeHtml(String(c.Status).toUpperCase())}
+            </span>
+          </div>
+        </div>
+      `;
+
+      // Controls
+      const controls = document.createElement('div');
+      controls.className = 'flex flex-col items-end gap-2';
+      controls.innerHTML = `
+        <div class="flex gap-2">
+          <button class="action-start inline-flex items-center gap-2 px-3 py-1 rounded-md border text-sm font-semibold border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400" aria-label="Start container ${escapeHtml(name)}" title="Start" ${isRunning ? 'disabled' : ''}>▶️</button>
+          <button class="action-stop inline-flex items-center gap-2 px-3 py-1 rounded-md border text-sm font-semibold border-red-500 text-red-400 hover:bg-red-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-red-400" aria-label="Stop container ${escapeHtml(name)}" title="Stop" ${(!isRunning || isPaused) ? 'disabled' : ''}>⏹️</button>
+        </div>
+        <button class="action-logs inline-flex items-center gap-2 px-3 py-1 rounded-md border text-sm font-semibold border-slate-500 text-slate-400 hover:bg-slate-600 hover:text-white focus:outline-none focus:ring-2 focus:ring-slate-400" aria-label="View logs for ${escapeHtml(name)}" title="Logs">📜 Logs</button>
+      `;
+
+      article.appendChild(header);
+      article.appendChild(controls);
+
+      // Attach event listeners to buttons
+      const startBtn = controls.querySelector('.action-start');
+      const stopBtn = controls.querySelector('.action-stop');
+      const logsBtn = controls.querySelector('.action-logs');
+
+      startBtn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        startContainer(id);
+      });
+      stopBtn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        stopContainer(id);
+      });
+      logsBtn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        showLogs(id, name);
+      });
+
+      return article;
+    }
+
+    // Render containers in grid based on currentView
+    function renderContainers(){
+      const filtered = containers.filter(c => {
+        const query = searchInput.value.trim().toLowerCase();
+        if(!query) return true;
+        const names = c.Names || [];
+        return names.some(n => n.toLowerCase().includes(query)) || (c.Image && c.Image.toLowerCase().includes(query));
+      });
+
+      const sorted = sortContainers(filtered);
+
+      if(sorted.length === 0){
+        noContainersRow.classList.remove('hidden');
+        containerGrid.innerHTML = '';
+        return;
+      } else {
+        noContainersRow.classList.add('hidden');
+      }
+
+      // Adjust grid columns & layout based on currentView
+      if(currentView === 'list'){
+        containerGrid.style.gridTemplateColumns = '1fr';
+      } else if(currentView === 'detailed'){
+        containerGrid.style.gridTemplateColumns = '1fr';
+      } else if(currentView === 'grid'){
+        containerGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+      }
+
+      containerGrid.innerHTML = '';
+      sorted.forEach(c => {
+        const card = createContainerCard(c);
+        containerGrid.appendChild(card);
+      });
+    }
+
+    /* ========== Actions ========== */
+    async function fetchContainers(){
+      setLoading(true);
+      setError(null);
+      try {
+        // Replace with your real backend endpoint if needed
+        const res = await fetch(API_BASE + '/containers');
+        if(!res.ok){
+          throw new Error(`Failed to fetch containers (HTTP ${res.status})`);
+        }
+        containers = await res.json();
+        renderSummary();
+        renderContainers();
+      } catch(e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function startContainer(id){
+      try {
+        const res = await fetch(API_BASE + `/containers/${id}/start`, {method:'POST'});
+        if(!res.ok){
+          throw new Error(`Failed to start container (HTTP ${res.status})`);
+        }
+        showToast(`Container started`);
+        await fetchContainers();
+      } catch(e){
+        setError(e.message);
+      }
+    }
+
+    async function stopContainer(id){
+      try {
+        const res = await fetch(API_BASE + `/containers/${id}/stop`, {method:'POST'});
+        if(!res.ok){
+          throw new Error(`Failed to stop container (HTTP ${res.status})`);
+        }
+        showToast(`Container stopped`);
+        await fetchContainers();
+      } catch(e){
+        setError(e.message);
+      }
+    }
+
+    async function showLogs(id, name){
+      logsTitle.textContent = `Logs: ${name}`;
+      logsContent.textContent = 'Loading logs...';
+      logsOverlay.classList.add('visible');
+      logsPanel.classList.add('visible');
+      try {
+        const res = await fetch(API_BASE + `/containers/${id}/logs`);
+        if(!res.ok) throw new Error(`Failed to fetch logs (HTTP ${res.status})`);
+        const text = await res.text();
+        logsContent.textContent = text || '(No logs)';
+      } catch(e){
+        logsContent.textContent = 'Error loading logs: ' + e.message;
+      }
+      logsPanel.focus();
+    }
+
+    function closeLogs(){
+      logsOverlay.classList.remove('visible');
+      logsPanel.classList.remove('visible');
+    }
+    logsCloseBtn.addEventListener('click', closeLogs);
+    logsOverlay.addEventListener('click', closeLogs);
+
+    logsCopyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(logsContent.textContent).then(() => {
+        showToast('Logs copied to clipboard');
+      }).catch(() => {
+        showToast('Failed to copy logs');
+      });
+    });
+
+    /* ========== UI helpers ========== */
+    function showToast(msg){
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    /* ========== Event listeners ========== */
+    refreshBtn.addEventListener('click', () => fetchContainers());
+
+    searchInput.addEventListener('input', () => {
+      renderContainers();
+      clearSearch.style.display = searchInput.value ? 'block' : 'none';
+    });
+    clearSearch.addEventListener('click', () => {
+      searchInput.value = '';
+      clearSearch.style.display = 'none';
+      renderContainers();
+      searchInput.focus();
+    });
+    clearSearch.addEventListener('keydown', e => {
+      if(e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        clearSearch.click();
+      }
+    });
+
+    sortSelect.addEventListener('change', e => {
+      currentSort = e.target.value;
+      renderContainers();
+    });
+
+    // View mode buttons toggling
+    function updateViewButtons(){
+      viewListBtn.classList.toggle('active', currentView === 'list');
+      viewListBtn.setAttribute('aria-pressed', currentView === 'list');
+      viewDetailedBtn.classList.toggle('active', currentView === 'detailed');
+      viewDetailedBtn.setAttribute('aria-pressed', currentView === 'detailed');
+      viewGridBtn.classList.toggle('active', currentView === 'grid');
+      viewGridBtn.setAttribute('aria-pressed', currentView === 'grid');
+    }
+    viewListBtn.addEventListener('click', () => {
+      if(currentView !== 'list'){
+        currentView = 'list';
+        updateViewButtons();
+        renderContainers();
+      }
+    });
+    viewDetailedBtn.addEventListener('click', () => {
+      if(currentView !== 'detailed'){
+        currentView = 'detailed';
+        updateViewButtons();
+        renderContainers();
+      }
+    });
+    viewGridBtn.addEventListener('click', () => {
+      if(currentView !== 'grid'){
+        currentView = 'grid';
+        updateViewButtons();
+        renderContainers();
+      }
+    });
+
+    // Navigation clicks (just highlight, no page change)
+    Object.entries(links).forEach(([key, el]) => {
+      el.addEventListener('click', e => {
+        e.preventDefault();
+        Object.values(links).forEach(l => {
+          l.classList.remove('active');
+          l.setAttribute('aria-selected', 'false');
+        });
+        el.classList.add('active');
+        el.setAttribute('aria-selected', 'true');
+        // Show/hide main sections here if multi-page supported
+        showToast(`Clicked "${key.charAt(0).toUpperCase() + key.slice(1)}" - feature to be implemented`);
+      });
+    });
+
+    /* ========== Dark mode toggle ========== */
+    // Adding dark mode toggle button in nav for example
+    function createDarkModeToggle(){
+      const btn = document.createElement('button');
+      btn.id = 'darkModeToggle';
+      btn.type = 'button';
+      btn.className = 'ml-4 px-3 py-1 rounded-md border border-slate-600 text-slate-400 hover:text-slate-100 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400';
+      btn.title = 'Toggle Dark Mode';
+      btn.setAttribute('aria-pressed', 'true');
+
+      const sun = `<svg xmlns="http://www.w3.org/2000/svg" class="inline-block w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M16.97 16.97l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M16.97 7.03l1.42-1.42"/></svg>`;
+      const moon = `<svg xmlns="http://www.w3.org/2000/svg" class="inline-block w-5 h-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 0112.21 3a7 7 0 000 14 9 9 0 018.79-4.21z"/></svg>`;
+
+      btn.innerHTML = sun + moon;
+      return btn;
+    }
+    // Append toggle to header
+    const headerRight = document.querySelector('main > header > div.flex.items-center.gap-3');
+    const darkToggle = createDarkModeToggle();
+    headerRight.insertBefore(darkToggle, headerRight.children[1]);
+
+    function setDarkMode(enabled){
+      if(enabled){
+        document.body.setAttribute('data-theme', 'dark');
+        darkToggle.querySelector('svg:first-child').classList.remove('hidden');
+        darkToggle.querySelector('svg:last-child').classList.add('hidden');
+        darkToggle.setAttribute('aria-pressed', 'true');
+        localStorage.setItem('dm-darkmode', 'true');
+      } else {
+        document.body.setAttribute('data-theme', 'light');
+        darkToggle.querySelector('svg:first-child').classList.add('hidden');
+        darkToggle.querySelector('svg:last-child').classList.remove('hidden');
+        darkToggle.setAttribute('aria-pressed', 'false');
+        localStorage.setItem('dm-darkmode', 'false');
+      }
+    }
+    // On load
+    setDarkMode(localStorage.getItem('dm-darkmode') === 'true');
+
+    darkToggle.addEventListener('click', () => {
+      setDarkMode(document.body.getAttribute('data-theme') !== 'dark');
+    });
+
+    /* ========== Initialization ========== */
+    function init(){
+      renderSummary();
+      updateViewButtons();
+      renderContainers();
+      fetchContainers();
+    }
+    init();
+  </script>
+</body>
 </html>
